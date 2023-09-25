@@ -1,3 +1,4 @@
+import {authenticate} from '@loopback/authentication'
 import {
   Count,
   CountSchema,
@@ -22,6 +23,7 @@ import {Credenciales, FactorDeAutenticacionPorCodigo, Login, Usuario} from '../m
 import {LoginRepository, UsuarioRepository} from '../repositories';
 import {service} from '@loopback/core';
 import {SeguridadUsuarioService} from '../services';
+import {ConfiguracionSeguridad} from '../config/seguridad.config';
 
 export class UsuarioController {
   constructor(
@@ -73,6 +75,10 @@ export class UsuarioController {
     return this.usuarioRepository.count(where);
   }
 
+  @authenticate({
+    strategy: "auth",
+    options:[ConfiguracionSeguridad.menuUsuarioId, ConfiguracionSeguridad.listarAccion]
+  })
   @get('/usuario')
   @response(200, {
     description: 'Array of Usuario model instances',
@@ -187,13 +193,15 @@ async identificarUsuario(
   let usuario = await this.servicioSeguridad.identificarUsuario(credenciales);
   if (usuario){
     let codigo2fa = this.servicioSeguridad.crearTextoAleatorio(5);
+    console.log(codigo2fa);
     let login:Login = new Login();
     login.usuarioId = usuario._id!;
     login.codigo2fa = codigo2fa;
     login.estadoCodigo2fa = false;
-    login.token="";
+    login.token = "";
     login.estadoToken = false;
     this.repositorioLogin.create(login);
+    usuario.clave = "";
     // Notificar al usuario via sms o correo
     return usuario;
   }
@@ -222,6 +230,18 @@ async VerificarCodigo2fa(
   let token = this.servicioSeguridad.crearToken(usuario);
   if (usuario) {
     usuario.clave = "";
+    try {
+    this.usuarioRepository.logins(usuario._id).patch(
+    {
+      estadoCodigo2fa: true,
+      token: token
+    },
+    {
+      estadoCodigo2fa: false
+    });
+  } catch {
+    console.log("No se a almacenado el cambio de estado del token en la base de datos")
+  }
     return {
       user:{
         usuario
